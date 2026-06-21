@@ -19,10 +19,17 @@ Two backends are measured in separate subprocesses:
 
 Each benchmark row measures:
 
-- setup time
-- reset latency
+- setup time, reported as a diagnostic only
+- reset latency after the runtime has already been built
 - batched step latency
-- aggregate physics steps per second
+- aggregate physics steps per second, the main rollout metric
+
+Important fairness note: `setup ms` is **not** the headline runtime comparison.
+For DrakeUni, setup includes MJCF materialization, MJCF contract parsing, batch
+pool creation, and Drake worker-context construction. Those are one-time
+preprocessing/runtime-construction costs. For `pydrake-loop`, setup is only
+direct simulator construction. The step-throughput columns are the fairer
+measure of rollout performance after both backends are ready.
 
 The default model paths point to a sibling UniLab checkout:
 
@@ -93,14 +100,38 @@ The key result is step throughput:
 - Go2 at 16 envs: DrakeUni reaches about `46k` physics steps/s with 8 workers,
   versus about `6k` physics steps/s for the serial pydrake loop.
 
-The reset column should be interpreted carefully. The raw pydrake baseline
-resets already-constructed simulator contexts in place. DrakeUni reset restores
-compact state through the batch runtime and refreshes raw sensor data, which is
-closer to the data path UniLab actually uses during training.
+This means DrakeUni's current advantage is exactly where it was intended to be:
+batched rollout stepping.
 
-The setup column includes model construction. DrakeUni currently has higher
-setup cost, especially for Go1, because it materializes the MJCF contract and
-builds batch worker state before stepping.
+The setup gap is real, but it is mostly not a physics-step cost. It comes from:
+
+- materializing a Drake-compatible MJCF copy;
+- parsing the MJCF contract for actuators, sensors, joints, contacts, and body
+  indices;
+- constructing the DrakeUni batch pool; and
+- constructing reusable Drake worker contexts.
+
+Those operations happen once before rollout. They should be optimized, but they
+should not be read as the steady-state simulation speed.
+
+The reset gap is also real and has a different cause. The raw pydrake baseline
+resets already-constructed simulator contexts in place. DrakeUni reset restores
+compact state through the batch runtime and refreshes raw sensor data. That
+matches UniLab's training data path more closely, but it currently does more
+copy/sensor work than the minimal pydrake reset loop. Reset-heavy tasks will
+therefore expose this overhead more strongly than long rollout segments.
+
+In short:
+
+| path | current result |
+|---|---|
+| setup/preprocess | pydrake-loop is lighter in this benchmark |
+| reset | pydrake-loop is lighter in this benchmark |
+| steady rollout stepping | DrakeUni is much faster |
+
+The next optimization targets for DrakeUni are setup decomposition and reset
+state/sensor refresh. The current benchmark already shows that the core batched
+physics stepping path is working.
 
 ## Notes
 
