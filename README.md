@@ -19,17 +19,13 @@ Two backends are measured in separate subprocesses:
 
 Each benchmark row measures:
 
-- setup time, reported as a diagnostic only
-- reset latency after the runtime has already been built
 - batched step latency
 - aggregate physics steps per second, the main rollout metric
+- speedup of DrakeUni over the serial `pydrake-loop`
 
-Important fairness note: `setup ms` is **not** the headline runtime comparison.
-For DrakeUni, setup includes MJCF materialization, MJCF contract parsing, batch
-pool creation, and Drake worker-context construction. Those are one-time
-preprocessing/runtime-construction costs. For `pydrake-loop`, setup is only
-direct simulator construction. The step-throughput columns are the fairer
-measure of rollout performance after both backends are ready.
+The benchmark script also records setup and reset diagnostics in JSON, but the
+README report focuses on steady rollout speed. Setup includes one-time model
+preprocessing and is not a fair runtime-speed headline.
 
 The default model paths point to a sibling UniLab checkout:
 
@@ -70,35 +66,45 @@ Rollout chunk: `10` simulator steps per benchmark step
 Control input: zero control  
 Models: UniLab Go1 and Go2 flat MJCF scenes  
 
-| model | backend | envs | workers | setup ms | step median ms | physics steps/s | reset median ms | reset envs/s |
-|---|---|---:|---:|---:|---:|---:|---:|---:|
-| Go1 | pydrake-loop | 1 | serial | 3.15 | 2.259 | 4,190 | 0.009 | 107,527 |
-| Go1 | drakeuni | 1 | 1 | 492.71 | 0.578 | 16,798 | 0.087 | 11,120 |
-| Go1 | pydrake-loop | 4 | serial | 9.97 | 9.089 | 4,180 | 0.038 | 104,529 |
-| Go1 | drakeuni | 4 | 1 | 490.96 | 2.322 | 16,915 | 0.269 | 14,781 |
-| Go1 | drakeuni | 4 | 4 | 489.45 | 1.018 | 39,575 | 0.165 | 23,705 |
-| Go1 | pydrake-loop | 16 | serial | 35.26 | 38.758 | 4,103 | 0.151 | 105,814 |
-| Go1 | drakeuni | 16 | 1 | 503.27 | 9.106 | 17,344 | 1.024 | 15,031 |
-| Go1 | drakeuni | 16 | 4 | 493.50 | 3.873 | 40,096 | 0.496 | 32,228 |
-| Go1 | drakeuni | 16 | 8 | 493.43 | 3.064 | 51,352 | 0.476 | 33,727 |
-| Go2 | pydrake-loop | 1 | serial | 2.60 | 1.475 | 6,361 | 0.010 | 93,240 |
-| Go2 | drakeuni | 1 | 1 | 66.19 | 0.638 | 15,469 | 0.073 | 13,462 |
-| Go2 | pydrake-loop | 4 | serial | 7.52 | 6.197 | 6,110 | 0.039 | 94,470 |
-| Go2 | drakeuni | 4 | 1 | 67.11 | 2.451 | 15,862 | 0.256 | 15,608 |
-| Go2 | drakeuni | 4 | 4 | 79.50 | 1.008 | 37,893 | 0.140 | 27,347 |
-| Go2 | pydrake-loop | 16 | serial | 25.61 | 24.916 | 6,178 | 0.150 | 106,289 |
-| Go2 | drakeuni | 16 | 1 | 70.06 | 9.496 | 16,154 | 0.963 | 16,616 |
-| Go2 | drakeuni | 16 | 4 | 67.59 | 4.337 | 38,216 | 0.555 | 28,353 |
-| Go2 | drakeuni | 16 | 8 | 67.21 | 3.391 | 45,884 | 0.459 | 34,873 |
+### Throughput Summary
+
+Higher is better. The speedup column compares the best DrakeUni result for that
+model/env count against the serial `pydrake-loop` baseline.
+
+| model | envs | pydrake-loop steps/s | best DrakeUni steps/s | best DrakeUni workers | speedup |
+|---|---:|---:|---:|---:|---:|
+| Go1 | 1 | 4,190 | 16,798 | 1 | **4.0x** |
+| Go1 | 4 | 4,180 | 39,575 | 4 | **9.5x** |
+| Go1 | 16 | 4,103 | 51,352 | 8 | **12.5x** |
+| Go2 | 1 | 6,361 | 15,469 | 1 | **2.4x** |
+| Go2 | 4 | 6,110 | 37,893 | 4 | **6.2x** |
+| Go2 | 16 | 6,178 | 45,884 | 8 | **7.4x** |
+
+### DrakeUni Scaling Detail
+
+This table shows how DrakeUni improves as worker count increases. A dash means
+the worker count is not distinct for that env count because DrakeUni caps
+workers at `num_envs`.
+
+| model | envs | pydrake-loop steps/s | DrakeUni 1 worker | DrakeUni 4 workers | DrakeUni 8 workers |
+|---|---:|---:|---:|---:|---:|
+| Go1 | 1 | 4,190 | 16,798 | - | - |
+| Go1 | 4 | 4,180 | 16,915 | 39,575 | - |
+| Go1 | 16 | 4,103 | 17,344 | 40,096 | 51,352 |
+| Go2 | 1 | 6,361 | 15,469 | - | - |
+| Go2 | 4 | 6,110 | 15,862 | 37,893 | - |
+| Go2 | 16 | 6,178 | 16,154 | 38,216 | 45,884 |
 
 ## Reading The Result
 
-The key result is step throughput:
+The key result is steady rollout throughput:
 
 - Go1 at 16 envs: DrakeUni reaches about `51k` physics steps/s with 8 workers,
-  versus about `4k` physics steps/s for the serial pydrake loop.
+  versus about `4k` physics steps/s for the serial pydrake loop, a **12.5x**
+  speedup.
 - Go2 at 16 envs: DrakeUni reaches about `46k` physics steps/s with 8 workers,
-  versus about `6k` physics steps/s for the serial pydrake loop.
+  versus about `6k` physics steps/s for the serial pydrake loop, a **7.4x**
+  speedup.
 
 This means DrakeUni's current advantage is exactly where it was intended to be:
 batched rollout stepping.
@@ -120,14 +126,6 @@ compact state through the batch runtime and refreshes raw sensor data. That
 matches UniLab's training data path more closely, but it currently does more
 copy/sensor work than the minimal pydrake reset loop. Reset-heavy tasks will
 therefore expose this overhead more strongly than long rollout segments.
-
-In short:
-
-| path | current result |
-|---|---|
-| setup/preprocess | pydrake-loop is lighter in this benchmark |
-| reset | pydrake-loop is lighter in this benchmark |
-| steady rollout stepping | DrakeUni is much faster |
 
 The next optimization targets for DrakeUni are setup decomposition and reset
 state/sensor refresh. The current benchmark already shows that the core batched
