@@ -34,6 +34,10 @@ The default model paths point to a sibling UniLab checkout:
 ../unilab/UniLab/src/unilab/assets/robots/go2/scene_flat.xml
 ```
 
+These are the original UniLab MJCF scenes. DrakeUni materializes temporary
+Drake-compatible copies during setup; the benchmark does not require
+pre-generated `*_drake.xml` files or committed converted mesh assets.
+
 Custom model paths can be supplied with `--model-path NAME=/path/to/model.xml`.
 
 ## Reproduce
